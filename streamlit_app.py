@@ -1,151 +1,74 @@
 import streamlit as st
 import pandas as pd
-import math
-from pathlib import Path
+from dateutil import parser
+from scipy.signal import savgol_filter
+import pydeck as pdk
+
+import lxml.etree
+
+
 
 # Set the title and favicon that appear in the Browser's tab bar.
 st.set_page_config(
-    page_title='GDP dashboard',
-    page_icon=':earth_americas:', # This is an emoji shortcode. Could be a URL too.
+    page_title='TCX Visualizer',	
+    page_icon=':penguin:', # This is an emoji shortcode. Could be a URL too.
+    layout='wide'
 )
-
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
 
 @st.cache_data
-def get_gdp_data():
-    """Grab GDP data from a CSV file.
+def get_data(file):
+    data = file.read()
+    xml = lxml.etree.fromstring(data)
+    ns = {'ns': 'http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2'}
+    # Get the trackpoints
+    trackpoints = xml.xpath('//ns:Trackpoint', namespaces=ns)
+    initial_time = parser.parse(trackpoints[0].xpath('ns:Time', namespaces=ns)[0].text)
+    initial_alt = float(trackpoints[0].xpath('ns:AltitudeMeters', namespaces=ns)[0].text)
+    records = [
+        {
+            'time': int((parser.parse(tp.xpath('ns:Time', namespaces=ns)[0].text) - initial_time).total_seconds()),
+            'lat': float(tp.xpath('ns:Position/ns:LatitudeDegrees', namespaces=ns)[0].text),
+            'lon':float(tp.xpath('ns:Position/ns:LongitudeDegrees', namespaces=ns)[0].text),
+            'alt': float(tp.xpath('ns:AltitudeMeters', namespaces=ns)[0].text),
+            'rel_alt': float(tp.xpath('ns:AltitudeMeters', namespaces=ns)[0].text) - initial_alt,
+            'ts': tp.xpath('ns:Time', namespaces=ns)[0].text,
+            'indx': tp.xpath('ns:Time', namespaces=ns)[0].text.split('T')[1].split('.')[0],
+            'distance':float(tp.xpath('ns:DistanceMeters', namespaces=ns)[0].text),
+            'heart_rate':int(tp.xpath('ns:HeartRateBpm/ns:Value', namespaces=ns)[0].text)
+        }
+        for tp in trackpoints
+    ]
 
-    This uses caching to avoid having to read the file every time. If we were
-    reading from an HTTP endpoint instead of a file, it's a good idea to set
-    a maximum age to the cache with the TTL argument: @st.cache_data(ttl='1d')
-    """
-
-    # Instead of a CSV on disk, you could read from an HTTP endpoint here too.
-    DATA_FILENAME = Path(__file__).parent/'data/gdp_data.csv'
-    raw_gdp_df = pd.read_csv(DATA_FILENAME)
-
-    MIN_YEAR = 1960
-    MAX_YEAR = 2022
-
-    # The data above has columns like:
-    # - Country Name
-    # - Country Code
-    # - [Stuff I don't care about]
-    # - GDP for 1960
-    # - GDP for 1961
-    # - GDP for 1962
-    # - ...
-    # - GDP for 2022
-    #
-    # ...but I want this instead:
-    # - Country Name
-    # - Country Code
-    # - Year
-    # - GDP
-    #
-    # So let's pivot all those year-columns into two: Year and GDP
-    gdp_df = raw_gdp_df.melt(
-        ['Country Code'],
-        [str(x) for x in range(MIN_YEAR, MAX_YEAR + 1)],
-        'Year',
-        'GDP',
-    )
-
-    # Convert years from string to integers
-    gdp_df['Year'] = pd.to_numeric(gdp_df['Year'])
-
-    return gdp_df
-
-gdp_df = get_gdp_data()
-
-# -----------------------------------------------------------------------------
-# Draw the actual page
-
-# Set the title that appears at the top of the page.
-'''
-# :earth_americas: GDP dashboard
-
-Browse GDP data from the [World Bank Open Data](https://data.worldbank.org/) website. As you'll
-notice, the data only goes to 2022 right now, and datapoints for certain years are often missing.
-But it's otherwise a great (and did I mention _free_?) source of data.
-'''
-
-# Add some spacing
-''
-''
-
-min_value = gdp_df['Year'].min()
-max_value = gdp_df['Year'].max()
-
-from_year, to_year = st.slider(
-    'Which years are you interested in?',
-    min_value=min_value,
-    max_value=max_value,
-    value=[min_value, max_value])
-
-countries = gdp_df['Country Code'].unique()
-
-if not len(countries):
-    st.warning("Select at least one country")
-
-selected_countries = st.multiselect(
-    'Which countries would you like to view?',
-    countries,
-    ['DEU', 'FRA', 'GBR', 'BRA', 'MEX', 'JPN'])
-
-''
-''
-''
-
-# Filter the data
-filtered_gdp_df = gdp_df[
-    (gdp_df['Country Code'].isin(selected_countries))
-    & (gdp_df['Year'] <= to_year)
-    & (from_year <= gdp_df['Year'])
-]
-
-st.header('GDP over time', divider='gray')
-
-''
-
-st.line_chart(
-    filtered_gdp_df,
-    x='Year',
-    y='GDP',
-    color='Country Code',
-)
-
-''
-''
+    df = pd.DataFrame.from_records(records)
+    df['speed'] = (df['distance'].diff() / df['time'].diff())*3.6
+    df['speed'].fillna(0, inplace=True)
+    df.set_index('indx', inplace=True)
+    df=df[df['speed'] >= 0]
+    df=df[df['speed'] <= 100]
+    df=df[df['distance'] > 0]
+    return df
 
 
-first_year = gdp_df[gdp_df['Year'] == from_year]
-last_year = gdp_df[gdp_df['Year'] == to_year]
+st.sidebar.title('Settings')
+file = st.sidebar.file_uploader('Upload a TCX file', type=['tcx'])
 
-st.header(f'GDP in {to_year}', divider='gray')
+st.title('TCX Visualizer')
 
-''
+if file:
+    df = get_data(file)
 
-cols = st.columns(4)
+    if st.checkbox('Show raw data', value=False):   
+        st.subheader('Data')
+        st.write(df)
 
-for i, country in enumerate(selected_countries):
-    col = cols[i % len(cols)]
+    st.subheader('Map')
+    st.map(df[['lat', 'lon']],size = 1, zoom=12,color='#FF6347')
 
-    with col:
-        first_gdp = first_year[first_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
-        last_gdp = last_year[last_year['Country Code'] == country]['GDP'].iat[0] / 1000000000
+    st.subheader('Time / Altitude')
+    st.line_chart(df[['alt']].apply(savgol_filter,  window_length=21, polyorder=2),color='#FF6347')  
 
-        if math.isnan(first_gdp):
-            growth = 'n/a'
-            delta_color = 'off'
-        else:
-            growth = f'{last_gdp / first_gdp:,.2f}x'
-            delta_color = 'normal'
+    st.subheader('Time / Speed')
+    st.line_chart(df[['speed']].apply(savgol_filter,  window_length=51, polyorder=2),color='#FF6347')
 
-        st.metric(
-            label=f'{country} GDP',
-            value=f'{last_gdp:,.0f}B',
-            delta=growth,
-            delta_color=delta_color
-        )
+    st.subheader('Time / Heart Rate')
+    st.line_chart(df[['heart_rate']].apply(savgol_filter,  window_length=51, polyorder=2),color='#FF6347')
