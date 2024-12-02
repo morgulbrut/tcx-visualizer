@@ -2,7 +2,7 @@
 
 A simple Streamlit to look at TCX files
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://gdp-dashboard-template.streamlit.app/)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://tcx-visualizer.streamlit.app/)
 
 ### How to run it on your own machine
 
@@ -20,5 +20,5 @@ A simple Streamlit to look at TCX files
 
 ## TODO
 
-[ ] get different TCX sammples
-[ ] maybe add GPX support
+- [ ] get different TCX samples
+- [ ] maybe add GPX support
