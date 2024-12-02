@@ -1,6 +1,6 @@
-# :earth_americas: GDP dashboard template
+# tcx-visualizer
 
-A simple Streamlit app showing the GDP of different countries in the world.
+A simple Streamlit to look at TCX files
 
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://gdp-dashboard-template.streamlit.app/)
 
@@ -17,3 +17,8 @@ A simple Streamlit app showing the GDP of different countries in the world.
    ```
    $ streamlit run streamlit_app.py
    ```
+
+## TODO
+
+[ ] get different TCX sammples
+[ ] maybe add GPX support
